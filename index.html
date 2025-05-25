@@ -31,82 +31,72 @@
   </div>
 
   <!-- Supabase JS SDK -->
-  <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-    const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
-    const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
+  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Funkcija za prikaz različitih stanja
-    function showState(state) {
-      document.getElementById('loadingState').classList.add('hidden');
-      document.getElementById('successState').classList.add('hidden');
-      document.getElementById('errorState').classList.add('hidden');
+  function showState(state) {
+    document.getElementById('loadingState').classList.add('hidden');
+    document.getElementById('successState').classList.add('hidden');
+    document.getElementById('errorState').classList.add('hidden');
+    document.getElementById(state).classList.remove('hidden');
+  }
+
+  function getHashParams() {
+    const hash = window.location.hash.substring(1);
+    return new URLSearchParams(hash);
+  }
+
+  async function verifyToken() {
+    showState('loadingState');
+    
+    try {
+      const hashParams = getHashParams();
       
-      document.getElementById(state).classList.remove('hidden');
-    }
+      // Pročitaj sve parametre
+      const access_token = hashParams.get('access_token');
+      const type = hashParams.get('type');
+      const error = hashParams.get('error');
+      const errorDescription = hashParams.get('error_description');
 
-    // Funkcija za čitanje hash parametara iz URL-a
-    function getHashParams() {
-      const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      return params;
-    }
-
-    // Verifikacija tokena
-    async function verifyToken() {
-      showState('loadingState');
-      
-      try {
-        const hashParams = getHashParams();
-        
-        // Pročitaj sve potrebne parametre iz hash-a
-        const type = hashParams.get('type');
-        const token = hashParams.get('token');
-        const error = hashParams.get('error');
-        const errorDescription = hashParams.get('error_description');
-
-        // Provera grešaka
-        if (error) {
-          throw new Error(errorDescription || `Greška: ${error}`);
-        }
-
-        // Provera da li postoji token i da li je tip signup
-        if (!token || type !== 'signup') {
-          throw new Error('Nevalidan link za verifikaciju. Proverite da li ste koristili ispravan link.');
-        }
-
-        // Email signup flow
-        const { error: verificationError } = await supabase.auth.verifyOtp({
-          type: 'signup',
-          token: token
-        });
-        
-        if (verificationError) throw verificationError;
-        
-        showState('successState');
-        
-        // Opciono: Redirekt nakon 3 sekunde
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 3000);
-        
-      } catch (error) {
-        console.error('Greška pri verifikaciji:', error);
-        document.getElementById('errorMessage').textContent = 
-          error.message || 'Došlo je do greške pri verifikaciji emaila';
-        showState('errorState');
+      if (error) {
+        throw new Error(errorDescription || `Greška: ${error}`);
       }
+
+      // Provera da li postoji access_token i da li je tip signup
+      if (!access_token || type !== 'signup') {
+        console.log('Hash parametri:', Array.from(hashParams.entries()));
+        throw new Error('Link nije u očekivanom formatu. Parametri: ' + window.location.hash);
+      }
+
+      // Postavi sesiju koristeći access_token
+      const { data: { user }, error: authError } = await supabase.auth.getUser(access_token);
+      
+      if (authError) throw authError;
+      if (!user) throw new Error('Korisnik nije pronađen');
+      
+      showState('successState');
+      
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 3000);
+      
+    } catch (error) {
+      console.error('Greška pri verifikaciji:', error);
+      document.getElementById('errorMessage').textContent = 
+        error.message || 'Došlo je do greške pri verifikaciji emaila';
+      showState('errorState');
     }
+  }
 
-    // Dugme za ponovni pokušaj
-    document.getElementById('retryBtn').addEventListener('click', () => {
-      window.location.reload();
-    });
+  document.getElementById('retryBtn').addEventListener('click', () => {
+    window.location.reload();
+  });
 
-    // Automatska verifikacija pri učitavanju stranice
-    window.addEventListener('DOMContentLoaded', verifyToken);
-  </script>
+  window.addEventListener('DOMContentLoaded', verifyToken);
+</script>
 </body>
 </html>
