@@ -47,11 +47,11 @@
       document.getElementById(state).classList.remove('hidden');
     }
 
-    // Funkcija za čitanje parametara iz URL-a (i search i hash)
-    function getUrlParams() {
-      // Kombiniramo i search (?...) i hash (#...) deo URL-a
-      const queryString = window.location.search + window.location.hash.replace('#', '?');
-      return new URLSearchParams(queryString);
+    // Funkcija za čitanje hash parametara iz URL-a
+    function getHashParams() {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      return params;
     }
 
     // Verifikacija tokena
@@ -59,46 +59,37 @@
       showState('loadingState');
       
       try {
-        const urlParams = getUrlParams();
+        const hashParams = getHashParams();
         
-        // Pročitaj sve potrebne parametre
-        const code = urlParams.get('code');
-        const token = urlParams.get('token');
-        const type = urlParams.get('type');
-        const error = urlParams.get('error');
-        const errorDescription = urlParams.get('error_description');
-        const errorCode = urlParams.get('error_code');
+        // Pročitaj sve potrebne parametre iz hash-a
+        const type = hashParams.get('type');
+        const token = hashParams.get('token');
+        const error = hashParams.get('error');
+        const errorDescription = hashParams.get('error_description');
 
         // Provera grešaka
-        if (error || errorCode) {
-          throw new Error(errorDescription || `Greška: ${error || errorCode}`);
+        if (error) {
+          throw new Error(errorDescription || `Greška: ${error}`);
         }
 
-        // Provera da li je link istekao
-        if (errorCode === 'otp_expired') {
-          throw new Error('Link za verifikaciju je istekao. Molimo zatražite novi link.');
+        // Provera da li postoji token i da li je tip signup
+        if (!token || type !== 'signup') {
+          throw new Error('Nevalidan link za verifikaciju. Proverite da li ste koristili ispravan link.');
         }
 
-        if (code) {
-          // OAuth flow
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else if (token) {
-          // Email signup flow
-          const { error } = await supabase.auth.verifyOtp({
-            type: type || 'signup', // Koristimo type iz URL-a ili podrazumevamo 'signup'
-            token: token
-          });
-          if (error) throw error;
-        } else {
-          throw new Error('Nedostaje verifikacioni token u URL-u');
-        }
+        // Email signup flow
+        const { error: verificationError } = await supabase.auth.verifyOtp({
+          type: 'signup',
+          token: token
+        });
+        
+        if (verificationError) throw verificationError;
         
         showState('successState');
         
         // Opciono: Redirekt nakon 3 sekunde
         setTimeout(() => {
-          window.location.href = '/'; // Promenite na željeni URL
+          window.location.href = '/';
         }, 3000);
         
       } catch (error) {
