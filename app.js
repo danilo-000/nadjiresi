@@ -16,24 +16,28 @@ async function verifyToken() {
   showState('loadingState');
 
   try {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    const type = urlParams.get('type');
-    const errorCode = urlParams.get('error_code');
-    const email = urlParams.get('email');
+    // Parsiranje iz hash URL-a umesto query stringa
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+    const token = hashParams.get('access_token');
+    const type = hashParams.get('type'); // npr. 'signup'
+    const email = hashParams.get('email'); // može biti null ako Supabase ne doda
+
+    const errorCode = hashParams.get('error_code');
 
     if (errorCode === 'otp_expired') {
       throw new Error('Link za verifikaciju je istekao. Molimo zatražite novi link.');
     }
 
-    if (!email || !token || type !== 'signup') {
+    if (!token || type !== 'signup') {
       throw new Error('Nevalidan link za verifikaciju');
     }
 
+    // verifyOtp koristi token i email (ako postoji)
     const { error } = await supabase.auth.verifyOtp({
       type: 'signup',
-      email: email,
-      token: token
+      token: token,
+      email: email || undefined // koristi ako postoji
     });
 
     if (error) throw error;
