@@ -41,8 +41,9 @@ h1 {
   color: #b91c1c;
 }
 
-.loading {
-  color: #6b7280;
+.info {
+  background-color: #e0f2fe;
+  color: #0369a1;
 }
 
 button {
