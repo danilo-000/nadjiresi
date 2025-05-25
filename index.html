@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Potvrda email adrese</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Loading state -->
+    <div id="loadingState">
+      <h1>Potvrda email adrese</h1>
+      <div class="status loading">Proveravam token...</div>
+    </div>
+    
+    <!-- Success state -->
+    <div id="successState" class="hidden">
+      <h1>Uspešna verifikacija!</h1>
+      <div class="status success">
+        Uspešno ste potvrdili email adresu. Možete zatvoriti ovu stranicu.
+      </div>
+    </div>
+    
+    <!-- Error state -->
+    <div id="errorState" class="hidden">
+      <h1>Greška pri verifikaciji</h1>
+      <div class="status error" id="errorMessage"></div>
+      <button id="retryBtn">Pokušajte ponovo</button>
+    </div>
+  </div>
+
+  <!-- Supabase JS SDK -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
