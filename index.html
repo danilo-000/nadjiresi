@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="sr">
 <head>
@@ -8,13 +9,10 @@
 </head>
 <body>
   <div class="container">
-    <!-- Initial state -->
-    <div id="initialState">
+    <!-- Loading state -->
+    <div id="loadingState">
       <h1>Potvrda email adrese</h1>
-      <div class="status info">
-        Kliknite na dugme ispod da biste verifikovali svoju email adresu.
-      </div>
-      <button id="verifyBtn">Verifikuj email</button>
+      <div class="status info">Proveravam verifikacioni link...</div>
     </div>
     
     <!-- Success state -->
@@ -33,43 +31,70 @@
     </div>
   </div>
 
-  <!-- Supabase JS SDK i tvoj skript -->
+  <!-- Supabase JS SDK -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Tvoj Supabase ključ
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Funkcija za prikaz različitih stanja
     function showState(state) {
-      document.getElementById('initialState').classList.add('hidden');
+      document.getElementById('loadingState').classList.add('hidden');
       document.getElementById('successState').classList.add('hidden');
       document.getElementById('errorState').classList.add('hidden');
+      
       document.getElementById(state).classList.remove('hidden');
     }
 
     // Verifikacija tokena
     async function verifyToken() {
+      showState('loadingState');
+      
       try {
-        const { data, error } = await supabase.auth.getSessionFromUrl();
-        if (error) throw error;
+        // Provera da li postoji code u URL-u (za OAuth)
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const token = urlParams.get('token');
+        
+        if (code) {
+          // OAuth flow
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else if (token) {
+          // Email signup flow
+          const { error } = await supabase.auth.verifyOtp({
+            type: 'signup',
+            token: token
+          });
+          if (error) throw error;
+        } else {
+          throw new Error('Nedostaje verifikacioni token u URL-u');
+        }
+        
         showState('successState');
+        
+        // Opciono: Redirekt nakon 3 sekunde
+        setTimeout(() => {
+          window.location.href = '/'; // Promenite na željeni URL
+        }, 3000);
+        
       } catch (error) {
         console.error('Greška pri verifikaciji:', error);
-        document.getElementById('errorMessage').textContent =
+        document.getElementById('errorMessage').textContent = 
           error.message || 'Došlo je do greške pri verifikaciji emaila';
         showState('errorState');
       }
     }
 
-    // Dugme za verifikaciju
-    document.getElementById('verifyBtn').addEventListener('click', verifyToken);
-
     // Dugme za ponovni pokušaj
     document.getElementById('retryBtn').addEventListener('click', () => {
-      showState('initialState');
+      window.location.reload();
     });
+
+    // Automatska verifikacija pri učitavanju stranice
+    window.addEventListener('DOMContentLoaded', verifyToken);
   </script>
 </body>
 </html>
