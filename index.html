@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="sr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Potvrda email adrese</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="container">
@@ -30,8 +30,84 @@
     </div>
   </div>
 
-  <!-- Supabase JS SDK -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-  <script src="app.js"></script>
+  <!-- Supabase JS SDK i tvoj skript -->
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+    const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Tvoj Supabase ključ
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Funkcija za prikaz različitih stanja
+    function showState(state) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('successState').classList.add('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById(state).classList.remove('hidden');
+    }
+
+    // Dekodiranje JWT tokena da bismo izvukli email
+    function extractEmailFromJWT(token) {
+      try {
+        const payloadBase64 = token.split('.')[1];
+        const decodedPayload = atob(payloadBase64);
+        const payload = JSON.parse(decodedPayload);
+        return payload.email || null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    // Verifikacija tokena
+    async function verifyToken() {
+      showState('loadingState');
+
+      try {
+        // Parsiraj hash parametre iz URL-a
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+        const token = hashParams.get('access_token');
+        const type = hashParams.get('type'); // npr. 'signup'
+        const errorCode = hashParams.get('error_code');
+
+        if (errorCode === 'otp_expired') {
+          throw new Error('Link za verifikaciju je istekao. Molimo zatražite novi link.');
+        }
+
+        if (!token || type !== 'signup') {
+          throw new Error('Nevalidan link za verifikaciju');
+        }
+
+        // Ekstrakcija email adrese iz tokena
+        const email = extractEmailFromJWT(token);
+
+        if (!email) {
+          throw new Error('Email nije pronađen u tokenu');
+        }
+
+        // verifyOtp sa tokenom i emailom
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'signup',
+          token,
+          email,
+        });
+
+        if (error) throw error;
+
+        showState('successState');
+      } catch (error) {
+        console.error('Greška pri verifikaciji:', error);
+        document.getElementById('errorMessage').textContent =
+          error.message || 'Došlo je do greške pri verifikaciji emaila';
+        showState('errorState');
+      }
+    }
+
+    // Dugme za ponovni pokušaj
+    document.getElementById('retryBtn').addEventListener('click', verifyToken);
+
+    // Pokretanje verifikacije kada se stranica učita
+    window.addEventListener('DOMContentLoaded', verifyToken);
+  </script>
 </body>
 </html>
