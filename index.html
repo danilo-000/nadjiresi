@@ -38,6 +38,9 @@
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Proveri da li je verifikacija već uspešna
+  let verificationCompleted = false;
+
   function showState(state) {
     document.getElementById('loadingState').classList.add('hidden');
     document.getElementById('successState').classList.add('hidden');
@@ -51,6 +54,12 @@
   }
 
   async function verifyToken() {
+    // Ako je verifikacija već uspešna, ne radi ništa
+    if (verificationCompleted || sessionStorage.getItem('verificationCompleted')) {
+      showState('successState');
+      return;
+    }
+
     showState('loadingState');
     
     try {
@@ -77,6 +86,13 @@
       
       if (authError) throw authError;
       if (!user) throw new Error('Korisnik nije pronađen');
+      
+      // Obeleži verifikaciju kao uspešnu
+      verificationCompleted = true;
+      sessionStorage.setItem('verificationCompleted', 'true');
+      
+      // Ukloni hash deo iz URL-a da se ne bi ponovo proveravao
+      window.history.replaceState({}, document.title, window.location.pathname);
       
       showState('successState');
       
