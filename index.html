@@ -31,88 +31,83 @@
   </div>
 
   <!-- Supabase JS SDK -->
-<script type="module">
-  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-  const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
-  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
-  const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
+    
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        flowType: 'pkce',
+        detectSessionInUrl: true
+      }
+    });
 
-  // Proveri da li je verifikacija već uspešna
-  let verificationCompleted = false;
-
-  function showState(state) {
-    document.getElementById('loadingState').classList.add('hidden');
-    document.getElementById('successState').classList.add('hidden');
-    document.getElementById('errorState').classList.add('hidden');
-    document.getElementById(state).classList.remove('hidden');
-  }
-
-  function getHashParams() {
-    const hash = window.location.hash.substring(1);
-    return new URLSearchParams(hash);
-  }
-
-  async function verifyToken() {
-    // Ako je verifikacija već uspešna, ne radi ništa
-    if (verificationCompleted || sessionStorage.getItem('verificationCompleted')) {
-      showState('successState');
-      return;
+    function showState(state) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('successState').classList.add('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById(state).classList.remove('hidden');
     }
 
-    showState('loadingState');
-    
-    try {
-      const hashParams = getHashParams();
-      
-      // Pročitaj sve parametre
-      const access_token = hashParams.get('access_token');
-      const type = hashParams.get('type');
-      const error = hashParams.get('error');
-      const errorDescription = hashParams.get('error_description');
+    async function verifyToken() {
+      showState('loadingState');
+
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const error = params.get('error');
+      const errorDescription = params.get('error_description');
 
       if (error) {
         throw new Error(errorDescription || `Greška: ${error}`);
       }
 
-      // Provera da li postoji access_token i da li je tip signup
-      if (!access_token || type !== 'signup') {
-        console.log('Hash parametri:', Array.from(hashParams.entries()));
-        throw new Error('Link nije u očekivanom formatu. Parametri: ' + window.location.hash);
+      if (!code) {
+        console.log('Params:', Array.from(params.entries()));
+        throw new Error('Link nema code parametar');
       }
 
-      // Postavi sesiju koristeći access_token
-      const { data: { user }, error: authError } = await supabase.auth.getUser(access_token);
-      
-      if (authError) throw authError;
-      if (!user) throw new Error('Korisnik nije pronađen');
-      
-      // Obeleži verifikaciju kao uspešnu
-      verificationCompleted = true;
-      sessionStorage.setItem('verificationCompleted', 'true');
-      
-      // Ukloni hash deo iz URL-a da se ne bi ponovo proveravao
-      window.history.replaceState({}, document.title, window.location.pathname);
-      
-      showState('successState');
-      
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 3000);
-      
-    } catch (error) {
-      console.error('Greška pri verifikaciji:', error);
-      document.getElementById('errorMessage').textContent = 
-        error.message || 'Došlo je do greške pri verifikaciji emaila';
-      showState('errorState');
+      try {
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        
+        if (exchangeError) {
+          throw exchangeError;
+        }
+
+        showState('successState');
+        
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'email_verified',
+            success: true
+          }));
+        }
+        
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 3000);
+      } catch (err) {
+        console.error('Greška pri verifikaciji:', err);
+        document.getElementById('errorMessage').textContent = 
+          err.message || 'Došlo je do greške pri verifikaciji emaila';
+        showState('errorState');
+      }
     }
-  }
 
-  document.getElementById('retryBtn').addEventListener('click', () => {
-    window.location.reload();
-  });
+    document.getElementById('retryBtn').addEventListener('click', () => {
+      window.location.reload();
+    });
 
-  window.addEventListener('DOMContentLoaded', verifyToken);
-</script>
+    window.addEventListener('DOMContentLoaded', () => {
+      try {
+        verifyToken();
+      } catch (err) {
+        console.error(err);
+        document.getElementById('errorMessage').textContent = err.message;
+        showState('errorState');
+      }
+    });
+  </script>
 </body>
 </html>
