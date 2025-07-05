@@ -36,7 +36,12 @@
 
   const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      flowType: 'pkce',
+      detectSessionInUrl: true
+    }
+  });
 
   // Proveri da li je verifikacija već uspešna
   let verificationCompleted = false;
@@ -54,49 +59,56 @@
   }
 
   async function verifyToken() {
+    console.log('🔍 Početak verifyToken funkcije');
+    console.log('📍 Trenutni URL:', window.location.href);
+    console.log('🪝 Hash deo URL-a:', window.location.hash);
+
     // Ako je verifikacija već uspešna, ne radi ništa
     if (verificationCompleted || sessionStorage.getItem('verificationCompleted')) {
+      console.log('ℹ️ Verifikacija je već uspešno obavljena');
       showState('successState');
       return;
     }
 
     showState('loadingState');
 
-    // Debug logging
-    console.log('🪝 Hash:', window.location.hash);
-    const hashParams = getHashParams();
-    console.log('📦 Parametri:', Object.fromEntries(hashParams.entries()));
-
     try {
+      const hashParams = getHashParams();
+      console.log('📊 Parsirani hash parametri:', Object.fromEntries(hashParams.entries()));
+
       const access_token = hashParams.get('access_token');
       const type = hashParams.get('type');
       const error = hashParams.get('error');
       const errorDescription = hashParams.get('error_description');
 
       if (error) {
+        console.error('❌ Greška u URL parametrima:', errorDescription || error);
         throw new Error(errorDescription || `Greška: ${error}`);
       }
 
       if (!access_token || type !== 'signup') {
+        console.error('❌ Nedostaju potrebni parametri u URL-u');
         throw new Error('Neispravan verifikacioni link.');
       }
 
-      // ✅ Ne proveravamo token jer je korisnik već verifikovan
+      console.log('✅ Provera parametara uspešna, korisnik je već verifikovan');
 
       // Obeleži kao uspešno
       verificationCompleted = true;
       sessionStorage.setItem('verificationCompleted', 'true');
 
       window.history.replaceState({}, document.title, window.location.pathname);
+      console.log('🔄 URL ažuriran bez hash dela');
 
       showState('successState');
+      console.log('✅ Prikazan uspešan status');
 
       setTimeout(() => {
         window.location.href = '/';
       }, 3000);
 
     } catch (error) {
-      console.error('Greška pri verifikaciji:', error);
+      console.error('❌ Greška pri verifikaciji:', error);
       document.getElementById('errorMessage').textContent =
         error.message || 'Došlo je do greške pri verifikaciji emaila';
       showState('errorState');
@@ -104,6 +116,7 @@
   }
 
   document.getElementById('retryBtn').addEventListener('click', () => {
+    console.log('🔄 Korisnik kliknuo na Pokušajte ponovo');
     window.location.reload();
   });
 
