@@ -38,8 +38,7 @@
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
   const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
-      flowType: 'pkce',
-      detectSessionInUrl: true
+      flowType: 'implicit'
     }
   });
 
