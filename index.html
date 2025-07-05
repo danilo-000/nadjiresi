@@ -75,26 +75,6 @@
     }
 
     async function verifyToken() {
-      // Proveri prvo da li korisnik postoji na serveru
-      try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error || !user) {
-          localStorage.removeItem('email_verification_completed');
-          throw new Error('Korisnik ne postoji');
-        }
-        
-        // Provera server statusa verifikacije
-        const serverEmailVerified = !!user.email_confirmed_at;
-        if (serverEmailVerified) {
-          localStorage.setItem('email_verification_completed', 'true');
-          showState('alreadyVerifiedState');
-          return;
-        }
-      } catch (error) {
-        localStorage.removeItem('email_verification_completed');
-        throw error;
-      }
-
       showState('loadingState');
 
       try {
@@ -114,6 +94,7 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
+        // Prvo proveri da li je link istekao
         if (created_at && isLinkExpired(created_at)) {
           showState('expiredState');
           return;
@@ -144,24 +125,49 @@
 
         console.log('Uspešna verifikacija za korisnika:', user.email);
         
-        // Provera server statusa pre nego što se kesira
-        const { data: { user: serverUser } } = await supabase.auth.getUser();
+        // Uvek proveri server status verifikacije
+        const { data: { user: serverUser }, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) {
+          throw userError;
+        }
+
         const serverEmailVerified = !!serverUser?.email_confirmed_at;
         
-        localStorage.setItem('email_verification_completed', String(serverEmailVerified));
+        if (serverEmailVerified) {
+          localStorage.setItem('email_verification_completed', 'true');
+          showState('alreadyVerifiedState');
+          return;
+        }
+
+        // Ako nije verifikovan, pokušaj verifikaciju
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          type: 'signup',
+          token_hash: access_token
+        });
+
+        if (verifyError) {
+          throw verifyError;
+        }
+
+        // Ponovo proveri status nakon verifikacije
+        const { data: { user: verifiedUser } } = await supabase.auth.getUser();
+        const verified = !!verifiedUser?.email_confirmed_at;
         
-        showState(serverEmailVerified ? 'successState' : 'errorState');
+        localStorage.setItem('email_verification_completed', String(verified));
+        
+        showState(verified ? 'successState' : 'errorState');
         
         window.history.replaceState({}, document.title, window.location.pathname);
 
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: serverEmailVerified,
+            success: verified,
             user: {
               id: user.id,
               email: user.email,
-              email_verified: serverEmailVerified
+              email_verified: verified
             }
           }));
         }
