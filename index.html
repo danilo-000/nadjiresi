@@ -73,6 +73,13 @@
       showState('loadingState');
 
       try {
+        // Prvo proveri da li postoji već logovan/verifikovan korisnik
+        const { data: { user: existingUser }, error: existingUserError } = await supabase.auth.getUser();
+        if (!existingUserError && existingUser?.email_confirmed_at) {
+          showState('alreadyVerifiedState');
+          return;
+        }
+
         const searchParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const allParams = new URLSearchParams([
@@ -100,14 +107,6 @@
           throw new Error('Neispravan verifikacioni link. Nedostaju potrebni parametri.');
         }
 
-        // Provera server statusa pre bilo kakve verifikacije
-        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-        
-        if (!userError && currentUser?.email_confirmed_at) {
-          showState('alreadyVerifiedState');
-          return;
-        }
-
         const { data: { user }, error: authError } = await supabase.auth.setSession({
           access_token,
           refresh_token
@@ -132,21 +131,19 @@
           throw verifyError;
         }
 
-        // Finalna provera nakon verifikacije
         const { data: { user: finalUser } } = await supabase.auth.getUser();
-        const isVerified = !!finalUser?.email_confirmed_at;
         
-        showState(isVerified ? 'successState' : 'errorState');
+        showState(!!finalUser?.email_confirmed_at ? 'successState' : 'errorState');
         window.history.replaceState({}, document.title, window.location.pathname);
 
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: isVerified,
+            success: !!finalUser?.email_confirmed_at,
             user: {
               id: user.id,
               email: user.email,
-              email_verified: isVerified
+              email_verified: !!finalUser?.email_confirmed_at
             }
           }));
         }
