@@ -59,16 +59,10 @@
       }
     });
 
-    // Proveri da li je verifikacija već uspešna
-    const VERIFICATION_KEY = 'email_verification_completed';
-    let verificationCompleted = localStorage.getItem(VERIFICATION_KEY) === 'true';
-
     function showState(state) {
-      // Sakrij sve stanja prvo
       document.querySelectorAll('.container > div').forEach(div => {
         div.classList.add('hidden');
       });
-      // Prikaži traženo stanje
       document.getElementById(state)?.classList.remove('hidden');
     }
 
@@ -81,10 +75,24 @@
     }
 
     async function verifyToken() {
-      // Ako je već verifikovano, prikaži odgovarajuću poruku
-      if (verificationCompleted) {
-        showState('alreadyVerifiedState');
-        return;
+      // Proveri prvo da li korisnik postoji na serveru
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          localStorage.removeItem('email_verification_completed');
+          throw new Error('Korisnik ne postoji');
+        }
+        
+        // Provera server statusa verifikacije
+        const serverEmailVerified = !!user.email_confirmed_at;
+        if (serverEmailVerified) {
+          localStorage.setItem('email_verification_completed', 'true');
+          showState('alreadyVerifiedState');
+          return;
+        }
+      } catch (error) {
+        localStorage.removeItem('email_verification_completed');
+        throw error;
       }
 
       showState('loadingState');
@@ -92,11 +100,8 @@
       try {
         console.log('Proveravam URL:', window.location.href);
         
-        // Proveri query parametre i hash
         const searchParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        
-        // Spoji parametre iz query stringa i hash-a
         const allParams = new URLSearchParams([
           ...Array.from(searchParams.entries()),
           ...Array.from(hashParams.entries())
@@ -109,16 +114,6 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
-        console.log('Svi parametri:', {
-          access_token,
-          refresh_token,
-          type,
-          error,
-          error_description,
-          created_at
-        });
-
-        // Provera isteka linka (24h)
         if (created_at && isLinkExpired(created_at)) {
           showState('expiredState');
           return;
@@ -149,24 +144,24 @@
 
         console.log('Uspešna verifikacija za korisnika:', user.email);
         
-        // Označi verifikaciju kao završenu
-        localStorage.setItem(VERIFICATION_KEY, 'true');
-        verificationCompleted = true;
+        // Provera server statusa pre nego što se kesira
+        const { data: { user: serverUser } } = await supabase.auth.getUser();
+        const serverEmailVerified = !!serverUser?.email_confirmed_at;
         
-        showState('successState');
+        localStorage.setItem('email_verification_completed', String(serverEmailVerified));
         
-        // Obriši osetljive podatke iz URL-a
+        showState(serverEmailVerified ? 'successState' : 'errorState');
+        
         window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Ako je ugrađeno u mobilnu aplikaciju
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: true,
+            success: serverEmailVerified,
             user: {
               id: user.id,
               email: user.email,
-              email_verified: user.email_confirmed_at !== null
+              email_verified: serverEmailVerified
             }
           }));
         }
@@ -183,7 +178,6 @@
       window.location.reload();
     });
 
-    // Pokretanje verifikacije
     window.addEventListener('DOMContentLoaded', verifyToken);
   </script>
 </body>
