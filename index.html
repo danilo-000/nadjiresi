@@ -62,8 +62,12 @@
 
     showState('loadingState');
 
+    // Debug logging
+    console.log('🪝 Hash:', window.location.hash);
+    const hashParams = getHashParams();
+    console.log('📦 Parametri:', Object.fromEntries(hashParams.entries()));
+
     try {
-      const hashParams = getHashParams();
       const access_token = hashParams.get('access_token');
       const type = hashParams.get('type');
       const error = hashParams.get('error');
