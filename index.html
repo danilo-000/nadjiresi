@@ -100,10 +100,10 @@
           throw new Error('Neispravan verifikacioni link. Nedostaju potrebni parametri.');
         }
 
+        // Provera server statusa pre bilo kakve verifikacije
         const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
         
         if (!userError && currentUser?.email_confirmed_at) {
-          localStorage.setItem('email_verification_completed', 'true');
           showState('alreadyVerifiedState');
           return;
         }
@@ -125,7 +125,6 @@
           if (verifyError.message.includes('already been used')) {
             const { data: { user: verifiedUser } } = await supabase.auth.getUser();
             if (verifiedUser?.email_confirmed_at) {
-              localStorage.setItem('email_verification_completed', 'true');
               showState('alreadyVerifiedState');
               return;
             }
@@ -133,20 +132,21 @@
           throw verifyError;
         }
 
+        // Finalna provera nakon verifikacije
         const { data: { user: finalUser } } = await supabase.auth.getUser();
-        localStorage.setItem('email_verification_completed', String(!!finalUser?.email_confirmed_at));
+        const isVerified = !!finalUser?.email_confirmed_at;
         
-        showState(!!finalUser?.email_confirmed_at ? 'successState' : 'errorState');
+        showState(isVerified ? 'successState' : 'errorState');
         window.history.replaceState({}, document.title, window.location.pathname);
 
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: !!finalUser?.email_confirmed_at,
+            success: isVerified,
             user: {
               id: user.id,
               email: user.email,
-              email_verified: !!finalUser?.email_confirmed_at
+              email_verified: isVerified
             }
           }));
         }
