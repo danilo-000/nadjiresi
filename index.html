@@ -4,16 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Potvrda email adrese</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="container">
-    <!-- Loading state -->
     <div id="loadingState">
       <h1>Potvrda email adrese</h1>
       <div class="status info">Proveravam verifikacioni link...</div>
     </div>
     
-    <!-- Success state -->
     <div id="successState" class="hidden">
       <h1>Uspešna verifikacija!</h1>
       <div class="status success">
@@ -21,7 +20,6 @@
       </div>
     </div>
     
-    <!-- Already verified state -->
     <div id="alreadyVerifiedState" class="hidden">
       <h1>Email je već verifikovan</h1>
       <div class="status info">
@@ -29,7 +27,6 @@
       </div>
     </div>
     
-    <!-- Expired state -->
     <div id="expiredState" class="hidden">
       <h1>Link je istekao</h1>
       <div class="status error">
@@ -37,7 +34,6 @@
       </div>
     </div>
     
-    <!-- Error state -->
     <div id="errorState" class="hidden">
       <h1>Greška pri verifikaciji</h1>
       <div class="status error" id="errorMessage"></div>
@@ -77,8 +73,6 @@
       showState('loadingState');
 
       try {
-        console.log('Proveravam URL:', window.location.href);
-        
         const searchParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const allParams = new URLSearchParams([
@@ -93,7 +87,6 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
-        // 1. Proveri da li je link istekao
         if (created_at && isLinkExpired(created_at)) {
           showState('expiredState');
           return;
@@ -107,7 +100,6 @@
           throw new Error('Neispravan verifikacioni link. Nedostaju potrebni parametri.');
         }
 
-        // 2. Prvo proveri server status
         const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
         
         if (!userError && currentUser?.email_confirmed_at) {
@@ -116,7 +108,6 @@
           return;
         }
 
-        // 3. Postavi sesiju
         const { data: { user }, error: authError } = await supabase.auth.setSession({
           access_token,
           refresh_token
@@ -125,14 +116,12 @@
         if (authError) throw authError;
         if (!user) throw new Error('Verifikacija nije uspela - korisnik nije pronađen');
 
-        // 4. Pokusaj verifikaciju
         const { error: verifyError } = await supabase.auth.verifyOtp({
           type: 'signup',
           token_hash: access_token
         });
 
         if (verifyError) {
-          // Ako je token vec iskoriscen, proveri ponovo status
           if (verifyError.message.includes('already been used')) {
             const { data: { user: verifiedUser } } = await supabase.auth.getUser();
             if (verifiedUser?.email_confirmed_at) {
@@ -144,7 +133,6 @@
           throw verifyError;
         }
 
-        // 5. Finalna provera
         const { data: { user: finalUser } } = await supabase.auth.getUser();
         localStorage.setItem('email_verification_completed', String(!!finalUser?.email_confirmed_at));
         
