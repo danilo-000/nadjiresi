@@ -115,6 +115,17 @@
           throw new Error('Korisnik više ne postoji. Nalog je možda obrisan.');
         }
 
+        // Proveri da li korisnik i dalje postoji u bazi
+        const { data: dbUser, error: dbError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (!dbUser) {
+          throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
+        }
+
         if (user.email_confirmed_at) {
           showState('alreadyVerifiedState');
           return;
