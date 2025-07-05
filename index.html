@@ -91,9 +91,16 @@
         throw new Error('Neispravan verifikacioni link.');
       }
 
-      console.log('✅ Provera parametara uspešna, korisnik je već verifikovan');
+      // 🔐 Poziv za potvrdu korisnika putem access tokena
+      const { data, error: confirmError } = await supabase.auth.getUser(access_token);
 
-      // Obeleži kao uspešno
+      if (confirmError) {
+        console.error('❌ Greška prilikom potvrde korisnika:', confirmError.message);
+        throw new Error(confirmError.message || 'Greška prilikom potvrde korisnika');
+      }
+
+      console.log('✅ Korisnik uspešno potvrđen:', data);
+
       verificationCompleted = true;
       sessionStorage.setItem('verificationCompleted', 'true');
 
