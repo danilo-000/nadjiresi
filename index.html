@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Potvrda email adrese</title>
-  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="container">
@@ -100,7 +99,6 @@
           throw new Error('Nedostaju parametri za pristup');
         }
 
-        // 1️⃣ Postavi sesiju
         const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
           access_token,
           refresh_token
@@ -108,14 +106,12 @@
 
         if (sessionError) throw sessionError;
 
-        // 2️⃣ Proveri korisnika
         const { data: { user }, error: userError } = await supabase.auth.getUser();
 
         if (userError || !user) {
           throw new Error('Korisnik više ne postoji. Nalog je možda obrisan.');
         }
 
-        // Proveri da li korisnik i dalje postoji u bazi
         const { data: dbUser, error: dbError } = await supabase
           .from('users')
           .select('id')
@@ -131,7 +127,6 @@
           return;
         }
 
-        // 3️⃣ Pokušaj verifikacije
         const { error: verifyError } = await supabase.auth.verifyOtp({
           type: 'signup',
           token_hash: access_token
