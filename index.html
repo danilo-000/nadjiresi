@@ -103,67 +103,54 @@
           return;
         }
 
-        if (created_at && isLinkExpired(created_at)) {
-          showState('expiredState');
-          return;
-        }
-
         if (error) {
           throw new Error(error_description || error);
         }
 
-        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+        // Provera isteka linka - sada koristimo stvarno vreme kreiranja linka
+        const { data: { user: initialUser }, error: initialUserError } = await supabase.auth.getUser(access_token);
+        
+        if (initialUserError) throw initialUserError;
+        if (!initialUser) throw new Error('Korisnik nije pronađen');
+        
+        // Provera da li je link istekao (24 sata od slanja verifikacionog emaila)
+        if (initialUser.confirmation_sent_at && isLinkExpired(initialUser.confirmation_sent_at)) {
+          showState('expiredState');
+          return;
+        }
+
+        // Postavi sesiju
+        const { error: sessionError } = await supabase.auth.setSession({
           access_token,
           refresh_token
         });
 
         if (sessionError) throw sessionError;
 
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-        if (userError || !user) {
-          throw new Error('Korisnik više ne postoji. Nalog je možda obrisan.');
-        }
-
+        // Proveri korisnika u bazi
         const { data: dbUser, error: dbError } = await supabase
           .from('users')
           .select('id')
-          .eq('id', user.id)
+          .eq('id', initialUser.id)
           .maybeSingle();
 
         if (!dbUser) {
           throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
         }
 
-        // Glavna promena: Uklonjena preuranjena provera email_confirmed_at
+        // Dobavi ažuriranog korisnika nakon verifikacije
+        const { data: { user: verifiedUserFinal }, error: userError } = await supabase.auth.getUser();
 
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          type: 'signup',
-          token_hash: access_token
-        });
-
-        if (verifyError) {
-          // Ako je token vec iskoriscen, proveri da li je email verifikovan
-          if (verifyError.message.includes('already been used')) {
-            const { data: { user: verifiedUser } } = await supabase.auth.getUser();
-            if (verifiedUser?.email_confirmed_at) {
-              sessionStorage.setItem('email_verified', 'true');
-              showState('successState'); // Email je verifikovan
-              return;
-            }
-            showState('alreadyVerifiedState');
-            return;
-          }
-          throw verifyError;
+        if (userError || !verifiedUserFinal) {
+          throw new Error('Greška pri dobavljanju korisnika');
         }
 
-        // Ako verifyOtp uspe
-        const { data: { user: verifiedUserFinal } } = await supabase.auth.getUser();
-        if (verifiedUserFinal?.email_confirmed_at) {
+        // Provera statusa verifikacije
+        if (verifiedUserFinal.email_confirmed_at) {
           sessionStorage.setItem('email_verified', 'true');
           showState('successState');
         } else {
-          showState('errorState');
+          showState('alreadyVerifiedState');
         }
 
         // Ocisti URL od tokena
@@ -173,11 +160,11 @@
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: !!verifiedUserFinal?.email_confirmed_at,
+            success: !!verifiedUserFinal.email_confirmed_at,
             user: {
-              id: user.id,
-              email: user.email,
-              email_verified: !!verifiedUserFinal?.email_confirmed_at
+              id: verifiedUserFinal.id,
+              email: verifiedUserFinal.email,
+              email_verified: !!verifiedUserFinal.email_confirmed_at
             }
           }));
         }
