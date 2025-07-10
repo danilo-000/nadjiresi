@@ -101,21 +101,18 @@
 
         // Ako i dalje nema tokena, proveri da li je korisnik već verifikovan
         if (!access_token || !refresh_token) {
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          
-          if (!sessionError && session?.user?.email_confirmed_at) {
-            showState('alreadyVerifiedState');
-            return;
-          }
-
+          // Pokušaj da dobiješ korisnika čak i bez sesije
           const { data: { user }, error: userError } = await supabase.auth.getUser();
-          
+
           if (!userError && user?.email_confirmed_at) {
             showState('alreadyVerifiedState');
             return;
           }
 
-          throw new Error('Nedostaju parametri za pristup');
+          showState('errorState');
+          document.getElementById('errorMessage').textContent =
+            'Nedostaju podaci za pristup ili je sesija istekla.';
+          return;
         }
 
         if (error) {
@@ -148,7 +145,7 @@
         // Proveri korisnika u bazi
         const { data: dbUser, error: dbError } = await supabase
           .from('users')
-          .select('id')
+          .select('id, email_verified')
           .eq('id', initialUser.id)
           .maybeSingle();
 
@@ -164,7 +161,7 @@
         }
 
         // Provera statusa verifikacije
-        if (verifiedUserFinal.email_confirmed_at) {
+        if (verifiedUserFinal.email_confirmed_at || dbUser.email_verified) {
           sessionStorage.setItem('email_verified', 'true');
           showState('successState');
         } else {
@@ -178,11 +175,11 @@
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: !!verifiedUserFinal.email_confirmed_at,
+            success: !!verifiedUserFinal.email_confirmed_at || dbUser.email_verified,
             user: {
               id: verifiedUserFinal.id,
               email: verifiedUserFinal.email,
-              email_verified: !!verifiedUserFinal.email_confirmed_at
+              email_verified: !!verifiedUserFinal.email_confirmed_at || dbUser.email_verified
             }
           }));
         }
