@@ -73,6 +73,12 @@
       showState('loadingState');
 
       try {
+        // Proveri da li je vec uspesno verifikovano u sessionStorage
+        if (sessionStorage.getItem('email_verified') === 'true') {
+          showState('successState');
+          return;
+        }
+
         const searchParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const allParams = new URLSearchParams([
@@ -87,6 +93,16 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
+        // Ako nema tokena, a nije uspesno verifikovano ranije
+        if (!access_token && !refresh_token) {
+          if (sessionStorage.getItem('email_verified') === 'true') {
+            showState('successState');
+          } else {
+            throw new Error('Nedostaju parametri za pristup');
+          }
+          return;
+        }
+
         if (created_at && isLinkExpired(created_at)) {
           showState('expiredState');
           return;
@@ -94,10 +110,6 @@
 
         if (error) {
           throw new Error(error_description || error);
-        }
-
-        if (!access_token || !refresh_token) {
-          throw new Error('Nedostaju parametri za pristup');
         }
 
         const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
@@ -123,10 +135,7 @@
           throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
         }
 
-        if (user.email_confirmed_at) {
-          showState('alreadyVerifiedState');
-          return;
-        }
+        // Glavna promena: Uklonjena preuranjena provera email_confirmed_at
 
         const { error: verifyError } = await supabase.auth.verifyOtp({
           type: 'signup',
@@ -134,20 +143,33 @@
         });
 
         if (verifyError) {
+          // Ako je token vec iskoriscen, proveri da li je email verifikovan
           if (verifyError.message.includes('already been used')) {
             const { data: { user: verifiedUser } } = await supabase.auth.getUser();
             if (verifiedUser?.email_confirmed_at) {
-              showState('alreadyVerifiedState');
+              sessionStorage.setItem('email_verified', 'true');
+              showState('successState'); // Email je verifikovan
               return;
             }
+            showState('alreadyVerifiedState');
+            return;
           }
           throw verifyError;
         }
 
+        // Ako verifyOtp uspe
         const { data: { user: verifiedUserFinal } } = await supabase.auth.getUser();
-        showState(verifiedUserFinal?.email_confirmed_at ? 'successState' : 'errorState');
+        if (verifiedUserFinal?.email_confirmed_at) {
+          sessionStorage.setItem('email_verified', 'true');
+          showState('successState');
+        } else {
+          showState('errorState');
+        }
+
+        // Ocisti URL od tokena
         window.history.replaceState({}, document.title, window.location.pathname);
 
+        // Aplikacija za mobilne uredjaje
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
