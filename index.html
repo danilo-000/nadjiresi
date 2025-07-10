@@ -93,14 +93,16 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
-        // Ako nema tokena, a nije uspesno verifikovano ranije
-        if (!access_token && !refresh_token) {
-          if (sessionStorage.getItem('email_verified') === 'true') {
-            showState('successState');
-          } else {
-            throw new Error('Nedostaju parametri za pristup');
+        // Ako nema tokena u URL-u, proveri da li je korisnik već prijavljen i verifikovan
+        if (!access_token || !refresh_token) {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (!sessionError && session?.user?.email_confirmed_at) {
+            showState('alreadyVerifiedState');
+            return;
           }
-          return;
+
+          throw new Error('Nedostaju parametri za pristup');
         }
 
         if (error) {
