@@ -92,6 +92,7 @@
         const error = allParams.get('error');
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
+        const verify_id = allParams.get('verify_id'); // Dodato za verifikacioni hash
 
         // Ako nema tokena u URL-u, proveri sessionStorage
         if (!access_token || !refresh_token) {
@@ -101,14 +102,22 @@
 
         // Ako i dalje nema tokena, proveri da li je korisnik već verifikovan
         if (!access_token || !refresh_token) {
-          // Pokušaj da dobiješ korisnika čak i bez sesije
-          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          // Proveri preko verifikacionog hash-a
+          if (verify_id) {
+            const { data: user, error } = await supabase
+              .from('users')
+              .select('email_verified')
+              .eq('email_verify_hash', verify_id)
+              .maybeSingle();
 
-          if (!userError && user?.email_confirmed_at) {
-            showState('alreadyVerifiedState');
-            return;
+            if (user?.email_verified) {
+              sessionStorage.setItem('email_verified', 'true');
+              showState('alreadyVerifiedState');
+              return;
+            }
           }
 
+          // Ako nema ni hash-a, prikaži grešku
           showState('errorState');
           document.getElementById('errorMessage').textContent =
             'Nedostaju podaci za pristup ili je sesija istekla.';
@@ -145,12 +154,20 @@
         // Proveri korisnika u bazi
         const { data: dbUser, error: dbError } = await supabase
           .from('users')
-          .select('id, email_verified')
+          .select('id, email_verified, email_verify_hash')
           .eq('id', initialUser.id)
           .maybeSingle();
 
         if (!dbUser) {
           throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
+        }
+
+        // Ako postoji verify_id u URL-u, ažuriraj hash u bazi
+        if (verify_id && !dbUser.email_verify_hash) {
+          await supabase
+            .from('users')
+            .update({ email_verify_hash: verify_id })
+            .eq('id', initialUser.id);
         }
 
         // Dobavi ažuriranog korisnika
