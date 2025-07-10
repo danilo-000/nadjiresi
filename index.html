@@ -16,7 +16,7 @@
     <div id="successState" class="hidden">
       <h1>Uspešna verifikacija!</h1>
       <div class="status success">
-        Uspešno ste potvrdili email adresu. Možete zatvoriti ovu stranicu.
+        Uspešno ste potvrdili email adresu. Možete zatvorici ovu stranicu.
       </div>
     </div>
     
@@ -93,11 +93,20 @@
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
-        // Ako nema tokena u URL-u, proveri da li je korisnik već prijavljen i verifikovan
+        // Ako nema tokena u URL-u, proveri da li je korisnik već verifikovan
         if (!access_token || !refresh_token) {
+          // Prvo proveri sesiju
           const { data: { session }, error: sessionError } = await supabase.auth.getSession();
           
           if (!sessionError && session?.user?.email_confirmed_at) {
+            showState('alreadyVerifiedState');
+            return;
+          }
+
+          // Ako nema sesije, proveri direktno korisnika
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          
+          if (!userError && user?.email_confirmed_at) {
             showState('alreadyVerifiedState');
             return;
           }
@@ -109,13 +118,12 @@
           throw new Error(error_description || error);
         }
 
-        // Provera isteka linka - sada koristimo stvarno vreme kreiranja linka
+        // Provera isteka linka
         const { data: { user: initialUser }, error: initialUserError } = await supabase.auth.getUser(access_token);
         
         if (initialUserError) throw initialUserError;
         if (!initialUser) throw new Error('Korisnik nije pronađen');
         
-        // Provera da li je link istekao (24 sata od slanja verifikacionog emaila)
         if (initialUser.confirmation_sent_at && isLinkExpired(initialUser.confirmation_sent_at)) {
           showState('expiredState');
           return;
@@ -140,7 +148,7 @@
           throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
         }
 
-        // Dobavi ažuriranog korisnika nakon verifikacije
+        // Dobavi ažuriranog korisnika
         const { data: { user: verifiedUserFinal }, error: userError } = await supabase.auth.getUser();
 
         if (userError || !verifiedUserFinal) {
