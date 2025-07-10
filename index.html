@@ -16,7 +16,7 @@
     <div id="successState" class="hidden">
       <h1>Uspešna verifikacija!</h1>
       <div class="status success">
-        Uspešno ste potvrdili email adresu. Možete zatvorici ovu stranicu.
+        Uspešno ste potvrdili email adresu. Možete zatvoriti ovu stranicu.
       </div>
     </div>
     
@@ -73,9 +73,9 @@
       showState('loadingState');
 
       try {
-        // Proveri da li je vec uspesno verifikovano u sessionStorage
+        // Proveri da li je vec uspesno verifikovano ranije
         if (sessionStorage.getItem('email_verified') === 'true') {
-          showState('successState');
+          showState('alreadyVerifiedState');
           return;
         }
 
@@ -86,16 +86,21 @@
           ...Array.from(hashParams.entries())
         ]);
 
-        const access_token = allParams.get('access_token');
-        const refresh_token = allParams.get('refresh_token');
+        let access_token = allParams.get('access_token');
+        let refresh_token = allParams.get('refresh_token');
         const type = allParams.get('type');
         const error = allParams.get('error');
         const error_description = allParams.get('error_description');
         const created_at = allParams.get('created_at');
 
-        // Ako nema tokena u URL-u, proveri da li je korisnik već verifikovan
+        // Ako nema tokena u URL-u, proveri sessionStorage
         if (!access_token || !refresh_token) {
-          // Prvo proveri sesiju
+          access_token = sessionStorage.getItem('supabase_access_token');
+          refresh_token = sessionStorage.getItem('supabase_refresh_token');
+        }
+
+        // Ako i dalje nema tokena, proveri da li je korisnik već verifikovan
+        if (!access_token || !refresh_token) {
           const { data: { session }, error: sessionError } = await supabase.auth.getSession();
           
           if (!sessionError && session?.user?.email_confirmed_at) {
@@ -103,7 +108,6 @@
             return;
           }
 
-          // Ako nema sesije, proveri direktno korisnika
           const { data: { user }, error: userError } = await supabase.auth.getUser();
           
           if (!userError && user?.email_confirmed_at) {
@@ -136,6 +140,10 @@
         });
 
         if (sessionError) throw sessionError;
+
+        // Sačuvaj tokene za sledeći put
+        sessionStorage.setItem('supabase_access_token', access_token);
+        sessionStorage.setItem('supabase_refresh_token', refresh_token);
 
         // Proveri korisnika u bazi
         const { data: dbUser, error: dbError } = await supabase
