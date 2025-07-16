@@ -4,7 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Potvrda email adrese</title>
-  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+    }
+    .hidden {
+      display: none;
+    }
+    .status {
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 5px;
+    }
+    .info {
+      background-color: #e7f5ff;
+      color: #0056b3;
+      border: 1px solid #b3d7ff;
+    }
+    .success {
+      background-color: #e6ffec;
+      color: #006622;
+      border: 1px solid #99e6b3;
+    }
+    .error {
+      background-color: #ffebee;
+      color: #cc0000;
+      border: 1px solid #ffb3b3;
+    }
+    #retryBtn {
+      padding: 10px 20px;
+      background-color: #0056b3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #retryBtn:hover {
+      background-color: #003d82;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -73,53 +114,34 @@
       showState('loadingState');
 
       try {
-        // Proveri da li je vec uspesno verifikovano ranije
+        // Proveri da li je već uspešno verifikovano ranije
         if (sessionStorage.getItem('email_verified') === 'true') {
           showState('alreadyVerifiedState');
           return;
         }
 
-        const searchParams = new URLSearchParams(window.location.search);
+        // Proveri URL za access_token
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const allParams = new URLSearchParams([
-          ...Array.from(searchParams.entries()),
-          ...Array.from(hashParams.entries())
-        ]);
-
-        let access_token = allParams.get('access_token');
-        let refresh_token = allParams.get('refresh_token');
-        const type = allParams.get('type');
-        const error = allParams.get('error');
-        const error_description = allParams.get('error_description');
-        const created_at = allParams.get('created_at');
+        const access_token = hashParams.get('access_token');
+        const refresh_token = hashParams.get('refresh_token');
+        const error = hashParams.get('error');
+        const error_description = hashParams.get('error_description');
 
         // Ako nema tokena u URL-u, proveri sessionStorage
         if (!access_token || !refresh_token) {
-          access_token = sessionStorage.getItem('supabase_access_token');
-          refresh_token = sessionStorage.getItem('supabase_refresh_token');
-        }
-
-        // Ako i dalje nema tokena, prikaži grešku
-        if (!access_token || !refresh_token) {
-          showState('errorState');
-          document.getElementById('errorMessage').textContent =
-            'Nedostaju podaci za pristup ili je sesija istekla.';
+          const storedToken = sessionStorage.getItem('supabase_access_token');
+          if (storedToken) {
+            showState('alreadyVerifiedState');
+          } else {
+            showState('errorState');
+            document.getElementById('errorMessage').textContent =
+              'Link više nije validan ili je nalog obrisan.';
+          }
           return;
         }
 
         if (error) {
           throw new Error(error_description || error);
-        }
-
-        // Provera isteka linka
-        const { data: { user: initialUser }, error: initialUserError } = await supabase.auth.getUser(access_token);
-        
-        if (initialUserError) throw initialUserError;
-        if (!initialUser) throw new Error('Korisnik nije pronađen');
-        
-        if (initialUser.confirmation_sent_at && isLinkExpired(initialUser.confirmation_sent_at)) {
-          showState('expiredState');
-          return;
         }
 
         // Postavi sesiju
@@ -134,44 +156,33 @@
         sessionStorage.setItem('supabase_access_token', access_token);
         sessionStorage.setItem('supabase_refresh_token', refresh_token);
 
-        // Proveri korisnika u bazi
-        const { data: dbUser, error: dbError } = await supabase
-          .from('users')
-          .select('id, email_verified')
-          .eq('id', initialUser.id)
-          .maybeSingle();
+        // Dobavi korisnika
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-        if (!dbUser) {
-          throw new Error('Korisnički nalog više ne postoji. Verifikacija nije moguća.');
-        }
-
-        // Dobavi ažuriranog korisnika
-        const { data: { user: verifiedUserFinal }, error: userError } = await supabase.auth.getUser();
-
-        if (userError || !verifiedUserFinal) {
+        if (userError || !user) {
           throw new Error('Greška pri dobavljanju korisnika');
         }
 
         // Provera statusa verifikacije
-        if (verifiedUserFinal.email_confirmed_at || dbUser.email_verified) {
+        if (user.email_confirmed_at) {
           sessionStorage.setItem('email_verified', 'true');
           showState('successState');
         } else {
           showState('alreadyVerifiedState');
         }
 
-        // Ocisti URL od tokena
+        // Očisti URL od tokena
         window.history.replaceState({}, document.title, window.location.pathname);
 
-        // Aplikacija za mobilne uredjaje
+        // Aplikacija za mobilne uređaje
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: !!verifiedUserFinal.email_confirmed_at || dbUser.email_verified,
+            success: !!user.email_confirmed_at,
             user: {
-              id: verifiedUserFinal.id,
-              email: verifiedUserFinal.email,
-              email_verified: !!verifiedUserFinal.email_confirmed_at || dbUser.email_verified
+              id: user.id,
+              email: user.email,
+              email_verified: !!user.email_confirmed_at
             }
           }));
         }
