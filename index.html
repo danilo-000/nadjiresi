@@ -10,74 +10,113 @@
       margin: 0 auto;
       padding: 20px;
       font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      min-height: 100vh;
     }
     .hidden {
       display: none;
     }
     .status {
-      padding: 15px;
+      padding: 20px;
       margin: 20px 0;
-      border-radius: 5px;
+      border-radius: 8px;
+      border-left: 5px solid;
     }
     .info {
       background-color: #e7f5ff;
       color: #0056b3;
-      border: 1px solid #b3d7ff;
+      border-left-color: #0056b3;
     }
     .success {
       background-color: #e6ffec;
       color: #006622;
-      border: 1px solid #99e6b3;
+      border-left-color: #00a650;
     }
     .error {
       background-color: #ffebee;
       color: #cc0000;
-      border: 1px solid #ffb3b3;
+      border-left-color: #ff4444;
+    }
+    .loading {
+      background-color: #fff3e0;
+      color: #e65100;
+      border-left-color: #ff9800;
     }
     #retryBtn {
-      padding: 10px 20px;
+      padding: 12px 24px;
       background-color: #0056b3;
       color: white;
       border: none;
       border-radius: 5px;
       cursor: pointer;
+      font-size: 16px;
+      margin-top: 15px;
     }
     #retryBtn:hover {
       background-color: #003d82;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #0056b3;
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="logo">NadjiResi</div>
+    
     <div id="loadingState">
       <h1>Potvrda email adrese</h1>
-      <div class="status info">Proveravam verifikacioni link...</div>
+      <div class="status loading">
+        <strong>Proveravam verifikacioni link...</strong>
+        <p>Molimo sačekajte dok potvrđujemo vašu email adresu.</p>
+      </div>
     </div>
     
     <div id="successState" class="hidden">
-      <h1>Uspešna verifikacija!</h1>
+      <h1>Uspešna verifikacija! 🎉</h1>
       <div class="status success">
-        Uspešno ste potvrdili email adresu. Možete zatvoriti ovu stranicu.
+        <strong>Čestitamo!</strong>
+        <p>Uspešno ste potvrdili svoju email adresu. Sada možete:</p>
+        <ul>
+          <li>Zatvoriti ovu stranicu</li>
+          <li>Vratiti se u NadjiResi aplikaciju</li>
+          <li>Prijaviti se sa svojim nalogom</li>
+        </ul>
       </div>
     </div>
     
     <div id="alreadyVerifiedState" class="hidden">
       <h1>Email je već verifikovan</h1>
       <div class="status info">
-        Vaš email je već potvrđen. Nema potrebe za ponovnom verifikacijom.
+        <strong>Vaš email je već potvrđen.</strong>
+        <p>Nema potrebe za ponovnom verifikacijom. Možete zatvoriti ovu stranicu i vratiti se u aplikaciju.</p>
       </div>
     </div>
     
     <div id="expiredState" class="hidden">
       <h1>Link je istekao</h1>
       <div class="status error">
-        Verifikacioni link je istekao (vredi 24 sata). Molimo zatražite novi link.
+        <strong>Verifikacioni link je istekao.</strong>
+        <p>Link za verifikaciju vredi 24 sata. Molimo zatražite novi link putem NadjiResi aplikacije.</p>
       </div>
+      <button id="expiredRetryBtn">Zatvori stranicu</button>
     </div>
     
     <div id="errorState" class="hidden">
       <h1>Greška pri verifikaciji</h1>
-      <div class="status error" id="errorMessage"></div>
+      <div class="status error">
+        <strong id="errorTitle">Došlo je do greške</strong>
+        <p id="errorMessage"></p>
+      </div>
       <button id="retryBtn">Pokušajte ponovo</button>
     </div>
   </div>
@@ -88,118 +127,168 @@
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        flowType: 'implicit',
-        detectSessionInUrl: true
-      }
-    });
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     function showState(state) {
+      console.log('Showing state:', state);
       document.querySelectorAll('.container > div').forEach(div => {
         div.classList.add('hidden');
       });
       document.getElementById(state)?.classList.remove('hidden');
     }
 
-    function isLinkExpired(createdAt) {
-      if (!createdAt) return false;
-      const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-      const linkCreatedAt = new Date(createdAt).getTime();
-      const now = new Date().getTime();
-      return (now - linkCreatedAt) > TWENTY_FOUR_HOURS;
+    function getErrorMessage(error) {
+      if (error.message.includes('already confirmed')) {
+        return 'Ovaj email je već verifikovan. Možete se prijaviti u aplikaciju.';
+      } else if (error.message.includes('expired')) {
+        return 'Verifikacioni link je istekao. Molimo zatražite novi link.';
+      } else if (error.message.includes('invalid')) {
+        return 'Link nije validan. Proverite da li ste ispravno kopirali link iz emaila.';
+      } else {
+        return error.message || 'Došlo je do neočekivane greške. Molimo pokušajte ponovo.';
+      }
     }
 
     async function verifyToken() {
       showState('loadingState');
 
       try {
+        console.log('🔍 Starting email verification...');
+        
         // Proveri da li je već uspešno verifikovano ranije
         if (sessionStorage.getItem('email_verified') === 'true') {
+          console.log('✅ Email already verified in this session');
           showState('alreadyVerifiedState');
           return;
         }
 
-        // Proveri URL za access_token
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const access_token = hashParams.get('access_token');
-        const refresh_token = hashParams.get('refresh_token');
-        const error = hashParams.get('error');
-        const error_description = hashParams.get('error_description');
+        // Proveri QUERY parametre (code dolazi u query stringu)
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const error = urlParams.get('error');
+        const error_description = urlParams.get('error_description');
 
-        // Ako nema tokena u URL-u, proveri sessionStorage
-        if (!access_token || !refresh_token) {
+        console.log('📧 URL Parameters:', { 
+          code: code ? 'present' : 'missing', 
+          error: error || 'none',
+          fullUrl: window.location.href 
+        });
+
+        // Ako postoji greška u URL-u
+        if (error) {
+          console.error('❌ Error in URL:', error_description || error);
+          throw new Error(error_description || error);
+        }
+
+        // Ako nema code parametra
+        if (!code) {
+          console.warn('⚠️ No code parameter found in URL');
           const storedToken = sessionStorage.getItem('supabase_access_token');
           if (storedToken) {
+            console.log('ℹ️ Session token found, email already verified');
             showState('alreadyVerifiedState');
           } else {
-            showState('errorState');
-            document.getElementById('errorMessage').textContent =
-              'Link više nije validan ili je nalog obrisan.';
+            console.error('❌ No code and no stored token');
+            throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila ili zatražite novi link.');
           }
           return;
         }
 
-        if (error) {
-          throw new Error(error_description || error);
+        console.log('🔄 Exchanging code for session...');
+        
+        // Exchange code za session - OVO JE KLJUČNA PROMENA
+        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (exchangeError) {
+          console.error('❌ Code exchange error:', exchangeError);
+          throw exchangeError;
         }
 
-        // Postavi sesiju
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token,
-          refresh_token
-        });
+        console.log('✅ Code exchanged successfully:', data);
 
-        if (sessionError) throw sessionError;
+        // Sačuvaj status verifikacije
+        sessionStorage.setItem('email_verified', 'true');
+        if (data.session?.access_token) {
+          sessionStorage.setItem('supabase_access_token', data.session.access_token);
+          console.log('🔐 Access token saved');
+        }
 
-        // Sačuvaj tokene za sledeći put
-        sessionStorage.setItem('supabase_access_token', access_token);
-        sessionStorage.setItem('supabase_refresh_token', refresh_token);
-
-        // Dobavi korisnika
+        // Dobavi korisnika da proverimo verifikaciju
         const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-        if (userError || !user) {
-          throw new Error('Greška pri dobavljanju korisnika');
+        if (userError) {
+          console.error('❌ Get user error:', userError);
+          throw userError;
         }
 
+        console.log('👤 User data:', user);
+
         // Provera statusa verifikacije
-        if (user.email_confirmed_at) {
-          sessionStorage.setItem('email_verified', 'true');
+        if (user?.email_confirmed_at) {
+          console.log('🎉 Email confirmed successfully!');
           showState('successState');
         } else {
+          console.log('ℹ️ Email confirmation status:', user?.email_confirmed_at);
           showState('alreadyVerifiedState');
         }
 
-        // Očisti URL od tokena
+        // Očisti URL od parametara
         window.history.replaceState({}, document.title, window.location.pathname);
+        console.log('🧹 URL cleaned');
 
         // Aplikacija za mobilne uređaje
         if (window.ReactNativeWebView) {
+          console.log('📱 Sending message to React Native WebView');
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'email_verified',
-            success: !!user.email_confirmed_at,
+            success: !!user?.email_confirmed_at,
             user: {
-              id: user.id,
-              email: user.email,
-              email_verified: !!user.email_confirmed_at
+              id: user?.id,
+              email: user?.email,
+              email_verified: !!user?.email_confirmed_at
             }
           }));
         }
 
       } catch (err) {
-        console.error('Greška pri verifikaciji:', err);
-        document.getElementById('errorMessage').textContent = 
-          err.message || 'Došlo je do greške pri verifikaciji emaila';
-        showState('errorState');
+        console.error('❌ Verification error:', err);
+        
+        const errorMessage = getErrorMessage(err);
+        document.getElementById('errorMessage').textContent = errorMessage;
+        
+        // Specificne poruke za specificne greške
+        if (err.message.includes('already confirmed')) {
+          showState('alreadyVerifiedState');
+        } else if (err.message.includes('expired')) {
+          showState('expiredState');
+        } else {
+          showState('errorState');
+        }
       }
     }
 
+    // Event listeneri za dugmad
     document.getElementById('retryBtn').addEventListener('click', () => {
+      console.log('🔄 Retry button clicked');
       window.location.reload();
     });
 
+    document.getElementById('expiredRetryBtn').addEventListener('click', () => {
+      console.log('🔙 Expired retry button clicked');
+      window.close(); // Pokušaj da zatvoriš tab
+    });
+
+    // Pokreni verifikaciju kada se stranica učita
+    console.log('🚀 Page loaded, starting verification...');
     window.addEventListener('DOMContentLoaded', verifyToken);
+
+    // Fallback ako DOMContentLoaded već prošao
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', verifyToken);
+    } else {
+      verifyToken();
+    }
   </script>
 </body>
 </html>
+
