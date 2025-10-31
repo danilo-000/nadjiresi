@@ -127,7 +127,13 @@
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // 👇 KLJUČNA PROMENA: Dodaj implicit flow
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        flowType: 'implicit', // OVO JE BITNO
+        detectSessionInUrl: true,
+      }
+    });
 
     function showState(state) {
       console.log('Showing state:', state);
@@ -154,6 +160,7 @@
 
       try {
         console.log('🔍 Starting email verification...');
+        console.log('📍 Full URL:', window.location.href);
         
         // Proveri da li je već uspešno verifikovano ranije
         if (sessionStorage.getItem('email_verified') === 'true') {
@@ -162,16 +169,17 @@
           return;
         }
 
-        // Proveri QUERY parametre (code dolazi u query stringu)
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const error = urlParams.get('error');
-        const error_description = urlParams.get('error_description');
+        // 👇 KLJUČNA PROMENA: Proveri HASH umesto QUERY parametara
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const access_token = hashParams.get('access_token');
+        const refresh_token = hashParams.get('refresh_token');
+        const error = hashParams.get('error');
+        const error_description = hashParams.get('error_description');
 
-        console.log('📧 URL Parameters:', { 
-          code: code ? 'present' : 'missing', 
-          error: error || 'none',
-          fullUrl: window.location.href 
+        console.log('🔑 Hash Parameters:', { 
+          access_token: access_token ? 'present' : 'missing',
+          refresh_token: refresh_token ? 'present' : 'missing',
+          error: error || 'none'
         });
 
         // Ako postoji greška u URL-u
@@ -180,31 +188,52 @@
           throw new Error(error_description || error);
         }
 
-        // Ako nema code parametra
-        if (!code) {
-          console.warn('⚠️ No code parameter found in URL');
+        // Ako nema tokena u hash-u
+        if (!access_token || !refresh_token) {
+          console.warn('⚠️ No tokens found in hash');
           const storedToken = sessionStorage.getItem('supabase_access_token');
           if (storedToken) {
             console.log('ℹ️ Session token found, email already verified');
             showState('alreadyVerifiedState');
           } else {
-            console.error('❌ No code and no stored token');
-            throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila ili zatražite novi link.');
+            console.error('❌ No tokens and no stored token');
+            
+            // 👇 PROVERI DA LI POSTOJE QUERY PARAMETRI KAO FALLBACK
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            if (code) {
+              console.log('🔄 Found code parameter, trying code exchange...');
+              const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+              if (exchangeError) throw exchangeError;
+              
+              // Ako je uspešno sa code-om, nastavi dalje
+              sessionStorage.setItem('email_verified', 'true');
+              if (data.session?.access_token) {
+                sessionStorage.setItem('supabase_access_token', data.session.access_token);
+              }
+              showState('successState');
+              return;
+            } else {
+              throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila ili zatražite novi link.');
+            }
           }
           return;
         }
 
-        console.log('🔄 Exchanging code for session...');
+        console.log('🔄 Setting session from tokens...');
         
-        // Exchange code za session - OVO JE KLJUČNA PROMENA
-        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        // 👇 KLJUČNA PROMENA: Koristi setSession umesto exchangeCodeForSession
+        const { data, error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token
+        });
 
-        if (exchangeError) {
-          console.error('❌ Code exchange error:', exchangeError);
-          throw exchangeError;
+        if (sessionError) {
+          console.error('❌ Session error:', sessionError);
+          throw sessionError;
         }
 
-        console.log('✅ Code exchanged successfully:', data);
+        console.log('✅ Session set successfully:', data);
 
         // Sačuvaj status verifikacije
         sessionStorage.setItem('email_verified', 'true');
@@ -232,7 +261,7 @@
           showState('alreadyVerifiedState');
         }
 
-        // Očisti URL od parametara
+        // Očisti URL od tokena
         window.history.replaceState({}, document.title, window.location.pathname);
         console.log('🧹 URL cleaned');
 
