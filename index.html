@@ -127,10 +127,10 @@
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     
-    // 👇 KLJUČNA PROMENA: Dodaj implicit flow
+    // 👇 DUAL FLOW: podržava i implicit i PKCE
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
-        flowType: 'implicit', // OVO JE BITNO
+        flowType: 'implicit',
         detectSessionInUrl: true,
       }
     });
@@ -169,7 +169,7 @@
           return;
         }
 
-        // 👇 KLJUČNA PROMENA: Proveri HASH umesto QUERY parametara
+        // 👇 PRVO PROVERI IMPLICIT FLOW (HASH)
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
         const access_token = hashParams.get('access_token');
         const refresh_token = hashParams.get('refresh_token');
@@ -188,95 +188,137 @@
           throw new Error(error_description || error);
         }
 
-        // Ako nema tokena u hash-u
-        if (!access_token || !refresh_token) {
-          console.warn('⚠️ No tokens found in hash');
-          const storedToken = sessionStorage.getItem('supabase_access_token');
-          if (storedToken) {
-            console.log('ℹ️ Session token found, email already verified');
-            showState('alreadyVerifiedState');
-          } else {
-            console.error('❌ No tokens and no stored token');
-            
-            // 👇 PROVERI DA LI POSTOJE QUERY PARAMETRI KAO FALLBACK
-            const urlParams = new URLSearchParams(window.location.search);
-            const code = urlParams.get('code');
-            if (code) {
-              console.log('🔄 Found code parameter, trying code exchange...');
-              const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-              if (exchangeError) throw exchangeError;
-              
-              // Ako je uspešno sa code-om, nastavi dalje
-              sessionStorage.setItem('email_verified', 'true');
-              if (data.session?.access_token) {
-                sessionStorage.setItem('supabase_access_token', data.session.access_token);
-              }
-              showState('successState');
-              return;
-            } else {
-              throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila ili zatražite novi link.');
-            }
+        // Ako imamo tokene u hash-u (IMPLICIT FLOW)
+        if (access_token && refresh_token) {
+          console.log('🔄 Using IMPLICIT flow (tokens in hash)...');
+          
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token
+          });
+
+          if (sessionError) {
+            console.error('❌ Session error:', sessionError);
+            throw sessionError;
           }
+
+          console.log('✅ Session set successfully:', data);
+
+          // Sačuvaj status verifikacije
+          sessionStorage.setItem('email_verified', 'true');
+          if (data.session?.access_token) {
+            sessionStorage.setItem('supabase_access_token', data.session.access_token);
+            console.log('🔐 Access token saved');
+          }
+
+          // Dobavi korisnika da proverimo verifikaciju
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+          if (userError) {
+            console.error('❌ Get user error:', userError);
+            throw userError;
+          }
+
+          console.log('👤 User data:', user);
+
+          // Provera statusa verifikacije
+          if (user?.email_confirmed_at) {
+            console.log('🎉 Email confirmed successfully!');
+            showState('successState');
+          } else {
+            console.log('ℹ️ Email confirmation status:', user?.email_confirmed_at);
+            showState('alreadyVerifiedState');
+          }
+
+          // Očisti URL od tokena
+          window.history.replaceState({}, document.title, window.location.pathname);
+          console.log('🧹 URL cleaned');
+
+          // Aplikacija za mobilne uređaje
+          if (window.ReactNativeWebView) {
+            console.log('📱 Sending message to React Native WebView');
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'email_verified',
+              success: !!user?.email_confirmed_at,
+              user: {
+                id: user?.id,
+                email: user?.email,
+                email_verified: !!user?.email_confirmed_at
+              }
+            }));
+          }
+
           return;
         }
 
-        console.log('🔄 Setting session from tokens...');
+        // 👇 AKO NEMA TOKENA U HASH-U, PROVERI PKCE FLOW (QUERY PARAMS)
+        console.warn('⚠️ No tokens found in hash, checking for PKCE code...');
         
-        // 👇 KLJUČNA PROMENA: Koristi setSession umesto exchangeCodeForSession
-        const { data, error: sessionError } = await supabase.auth.setSession({
-          access_token,
-          refresh_token
-        });
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
 
-        if (sessionError) {
-          console.error('❌ Session error:', sessionError);
-          throw sessionError;
-        }
+        if (code) {
+          console.log('🔄 Using PKCE code exchange...');
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-        console.log('✅ Session set successfully:', data);
+          if (exchangeError) {
+            console.error('❌ PKCE code exchange error:', exchangeError);
+            throw exchangeError;
+          }
+          
+          // Ako je uspešno sa code-om, nastavi dalje
+          sessionStorage.setItem('email_verified', 'true');
+          if (data.session?.access_token) {
+            sessionStorage.setItem('supabase_access_token', data.session.access_token);
+          }
 
-        // Sačuvaj status verifikacije
-        sessionStorage.setItem('email_verified', 'true');
-        if (data.session?.access_token) {
-          sessionStorage.setItem('supabase_access_token', data.session.access_token);
-          console.log('🔐 Access token saved');
-        }
+          console.log('✅ PKCE verification successful');
 
-        // Dobavi korisnika da proverimo verifikaciju
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+          // Dobavi korisnika da proverimo verifikaciju
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-        if (userError) {
-          console.error('❌ Get user error:', userError);
-          throw userError;
-        }
-
-        console.log('👤 User data:', user);
-
-        // Provera statusa verifikacije
-        if (user?.email_confirmed_at) {
-          console.log('🎉 Email confirmed successfully!');
-          showState('successState');
-        } else {
-          console.log('ℹ️ Email confirmation status:', user?.email_confirmed_at);
-          showState('alreadyVerifiedState');
-        }
-
-        // Očisti URL od tokena
-        window.history.replaceState({}, document.title, window.location.pathname);
-        console.log('🧹 URL cleaned');
-
-        // Aplikacija za mobilne uređaje
-        if (window.ReactNativeWebView) {
-          console.log('📱 Sending message to React Native WebView');
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'email_verified',
-            success: !!user?.email_confirmed_at,
-            user: {
-              id: user?.id,
-              email: user?.email,
-              email_verified: !!user?.email_confirmed_at
+          if (!userError && user) {
+            console.log('👤 User data after PKCE:', user);
+            
+            // Provera statusa verifikacije
+            if (user?.email_confirmed_at) {
+              console.log('🎉 Email confirmed successfully via PKCE!');
+              showState('successState');
+            } else {
+              console.log('ℹ️ Email already verified via PKCE');
+              showState('alreadyVerifiedState');
             }
-          }));
+
+            // Aplikacija za mobilne uređaje
+            if (window.ReactNativeWebView) {
+              console.log('📱 Sending message to React Native WebView');
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'email_verified',
+                success: !!user?.email_confirmed_at,
+                user: {
+                  id: user?.id,
+                  email: user?.email,
+                  email_verified: !!user?.email_confirmed_at
+                }
+              }));
+            }
+          } else {
+            showState('successState');
+          }
+
+          // Očisti URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+
+        // 👇 AKO NEMA NI CODE PARAMETRA, PROVERI DA LI POSTOJI SAČUVANI TOKEN
+        const storedToken = sessionStorage.getItem('supabase_access_token');
+        if (storedToken) {
+          console.log('ℹ️ Session token found, email already verified');
+          showState('alreadyVerifiedState');
+        } else {
+          console.error('❌ No tokens, no code, and no stored token');
+          throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila ili zatražite novi link.');
         }
 
       } catch (err) {
@@ -320,7 +362,3 @@
   </script>
 </body>
 </html>
-
-
-
-
