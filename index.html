@@ -130,7 +130,7 @@
     // 👇 IMPLICIT FLOW ZA EMAIL VERIFICATION
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
-        flowType: 'implicit', // BITNO: implicit za email verification
+        flowType: 'implicit',
         detectSessionInUrl: true,
         autoRefreshToken: false
       }
@@ -284,3 +284,4 @@
   </script>
 </body>
 </html>
+
