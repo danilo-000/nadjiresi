@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Potvrda email adrese</title>
   <style>
-    /* ... postojeći CSS ostaje isti ... */
     .container {
       max-width: 600px;
       margin: 0 auto;
@@ -128,7 +127,7 @@
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     
-    // 👇 PKCE FLOW - OVO JE KLJUČNO
+    // 👇 PKCE FLOW
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
         flowType: 'pkce',
@@ -153,7 +152,7 @@
       } else if (error.message.includes('invalid')) {
         return 'Link nije validan. Proverite da li ste ispravno kopirali link iz emaila.';
       } else if (error.message.includes('code verifier')) {
-        return 'Greška pri verifikaciji. Molimo pokušajte ponovo ili zatražite novi link.';
+        return 'Sesija za verifikaciju je istekla. Molimo zatražite novi verifikacioni link.';
       } else {
         return error.message || 'Došlo je do neočekivane greške. Molimo pokušajte ponovo.';
       }
@@ -166,21 +165,18 @@
         console.log('🔍 Starting PKCE email verification...');
         console.log('📍 Full URL:', window.location.href);
         
-        // Proveri da li je već verifikovano
-        if (sessionStorage.getItem('email_verified') === 'true') {
-          console.log('✅ Email already verified in this session');
-          showState('alreadyVerifiedState');
-          return;
-        }
-
-        // 👇 PKCE FLOW - PROVERI CODE PARAMETAR
+        // 👇 PROVERI SVE PARAMETRE
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const error = urlParams.get('error');
         const error_description = urlParams.get('error_description');
+        const code_challenge = urlParams.get('code_challenge');
+        const state = urlParams.get('state');
 
-        console.log('🔑 PKCE Parameters:', { 
+        console.log('🔑 All URL Parameters:', { 
           code: code ? 'present' : 'missing',
+          code_challenge: code_challenge ? 'present' : 'missing',
+          state: state ? 'present' : 'missing',
           error: error || 'none'
         });
 
@@ -198,6 +194,12 @@
           
           if (exchangeError) {
             console.error('❌ PKCE code exchange error:', exchangeError);
+            
+            // Ako je greška zbog code_verifier, obavesti korisnika
+            if (exchangeError.message.includes('code verifier')) {
+              throw new Error('Sesija za verifikaciju je istekla. Molimo zatražite novi verifikacioni link.');
+            }
+            
             throw exchangeError;
           }
 
@@ -246,28 +248,7 @@
           return;
         }
 
-        // 👇 FALLBACK: Proveri implicit flow
-        console.warn('⚠️ No PKCE code found, checking implicit flow...');
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const access_token = hashParams.get('access_token');
-        const refresh_token = hashParams.get('refresh_token');
-
-        if (access_token && refresh_token) {
-          console.log('🔄 Fallback to implicit flow...');
-          
-          const { data, error: sessionError } = await supabase.auth.setSession({
-            access_token,
-            refresh_token
-          });
-
-          if (!sessionError) {
-            console.log('✅ Implicit flow successful');
-            showState('successState');
-            return;
-          }
-        }
-
-        // Ako nema ni code ni tokena
+        // Ako nema code parametra
         throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link.');
 
       } catch (err) {
@@ -278,7 +259,7 @@
         
         if (err.message.includes('already confirmed')) {
           showState('alreadyVerifiedState');
-        } else if (err.message.includes('expired')) {
+        } else if (err.message.includes('expired') || err.message.includes('istekla')) {
           showState('expiredState');
         } else {
           showState('errorState');
@@ -288,29 +269,15 @@
 
     // Event listeneri
     document.getElementById('retryBtn').addEventListener('click', () => {
-      console.log('🔄 Retry button clicked');
       window.location.reload();
     });
 
     document.getElementById('expiredRetryBtn').addEventListener('click', () => {
-      console.log('🔙 Expired retry button clicked');
-      if (window.history.length > 1) {
-        window.history.back();
-      } else {
-        window.close();
-      }
+      window.close();
     });
 
     // Pokreni verifikaciju
-    console.log('🚀 Page loaded, starting PKCE verification...');
     window.addEventListener('DOMContentLoaded', verifyEmail);
-
-    // Fallback
-    if (document.readyState === 'loading') {
-      window.addEventListener('DOMContentLoaded', verifyEmail);
-    } else {
-      verifyEmail();
-    }
   </script>
 </body>
 </html>
