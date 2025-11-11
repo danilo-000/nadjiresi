@@ -127,12 +127,12 @@
     const supabaseUrl = 'https://dgjulcfmgmmfpjawamgc.supabase.co';
     const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnanVsY2ZtZ21tZnBqYXdhbWdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYyNzU5MDAsImV4cCI6MjA2MTg1MTkwMH0.bJWnb3i6VrOFii7Z9HkOOyBwBAYRnQnNmPInW3tm8bM';
     
-    // 👇 PKCE FLOW
+    // 👇 IMPLICIT FLOW ZA EMAIL VERIFICATION
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
-        flowType: 'pkce',
+        flowType: 'implicit', // BITNO: implicit za email verification
         detectSessionInUrl: true,
-        autoRefreshToken: true
+        autoRefreshToken: false
       }
     });
 
@@ -151,8 +151,6 @@
         return 'Verifikacioni link je istekao. Molimo zatražite novi link.';
       } else if (error.message.includes('invalid')) {
         return 'Link nije validan. Proverite da li ste ispravno kopirali link iz emaila.';
-      } else if (error.message.includes('code verifier')) {
-        return 'Sesija za verifikaciju je istekla. Molimo zatražite novi verifikacioni link.';
       } else {
         return error.message || 'Došlo je do neočekivane greške. Molimo pokušajte ponovo.';
       }
@@ -162,48 +160,43 @@
       showState('loadingState');
 
       try {
-        console.log('🔍 Starting PKCE email verification...');
+        console.log('🔍 Starting IMPLICIT email verification...');
         console.log('📍 Full URL:', window.location.href);
         
-        // 👇 PROVERI SVE PARAMETRE
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const error = urlParams.get('error');
-        const error_description = urlParams.get('error_description');
-        const code_challenge = urlParams.get('code_challenge');
-        const state = urlParams.get('state');
+        // 👇 IMPLICIT FLOW - TOKENI SU U HASH-U (#access_token=...)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const access_token = hashParams.get('access_token');
+        const refresh_token = hashParams.get('refresh_token');
+        const error = hashParams.get('error');
+        const error_description = hashParams.get('error_description');
 
-        console.log('🔑 All URL Parameters:', { 
-          code: code ? 'present' : 'missing',
-          code_challenge: code_challenge ? 'present' : 'missing',
-          state: state ? 'present' : 'missing',
+        console.log('🔑 Hash Parameters (IMPLICIT):', { 
+          access_token: access_token ? 'present' : 'missing',
+          refresh_token: refresh_token ? 'present' : 'missing',
           error: error || 'none'
         });
 
-        // Ako postoji greška
+        // Ako postoji greška u URL-u
         if (error) {
           console.error('❌ Error in URL:', error_description || error);
           throw new Error(error_description || error);
         }
 
-        // 👇 PKCE CODE EXCHANGE
-        if (code) {
-          console.log('🔄 Exchanging PKCE code for session...');
+        // 👇 IMPLICIT FLOW - KORISTI TOKEN IZ HASH-A
+        if (access_token && refresh_token) {
+          console.log('🔄 Using IMPLICIT flow (tokens in hash)...');
           
-          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-          
-          if (exchangeError) {
-            console.error('❌ PKCE code exchange error:', exchangeError);
-            
-            // Ako je greška zbog code_verifier, obavesti korisnika
-            if (exchangeError.message.includes('code verifier')) {
-              throw new Error('Sesija za verifikaciju je istekla. Molimo zatražite novi verifikacioni link.');
-            }
-            
-            throw exchangeError;
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token
+          });
+
+          if (sessionError) {
+            console.error('❌ Session error:', sessionError);
+            throw sessionError;
           }
 
-          console.log('✅ PKCE code exchange successful:', data);
+          console.log('✅ Session set successfully via IMPLICIT flow');
 
           // Dobavi korisnika
           const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -213,19 +206,16 @@
             throw userError;
           }
 
-          console.log('👤 User data after PKCE:', user);
+          console.log('👤 User data:', user);
 
           // Provera statusa verifikacije
           if (user?.email_confirmed_at) {
-            console.log('🎉 Email confirmed successfully via PKCE!');
+            console.log('🎉 Email confirmed successfully via IMPLICIT flow!');
             showState('successState');
           } else {
             console.log('ℹ️ Email already verified');
             showState('alreadyVerifiedState');
           }
-
-          // Sačuvaj status
-          sessionStorage.setItem('email_verified', 'true');
 
           // Očisti URL
           window.history.replaceState({}, document.title, window.location.pathname);
@@ -248,8 +238,20 @@
           return;
         }
 
-        // Ako nema code parametra
-        throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link.');
+        // 👇 FALLBACK: Ako nema tokena u hash-u, možda je stari link
+        console.warn('⚠️ No tokens found in hash');
+        
+        // Proveri da li postoji code (PKCE) u query parametrima
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        
+        if (code) {
+          console.log('🔑 Found PKCE code, but this requires app context');
+          throw new Error('Verifikacioni link zahteva otvaranje u aplikaciji. Molimo otvorite link u NadjiResi aplikaciji.');
+        }
+
+        // Ako nema ni tokena ni code
+        throw new Error('Verifikacioni link nije validan. Proverite da li ste ispravno kopirali link iz emaila.');
 
       } catch (err) {
         console.error('❌ Verification error:', err);
@@ -277,6 +279,7 @@
     });
 
     // Pokreni verifikaciju
+    console.log('🚀 Page loaded, starting IMPLICIT verification...');
     window.addEventListener('DOMContentLoaded', verifyEmail);
   </script>
 </body>
